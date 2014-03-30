@@ -38,6 +38,7 @@ _COM_SMARTPTR_TYPEDEF(IMMDevice, __uuidof(IMMDevice));
 _COM_SMARTPTR_TYPEDEF(IAudioClient, __uuidof(IAudioClient));
 _COM_SMARTPTR_TYPEDEF(IAudioRenderClient, __uuidof(IAudioRenderClient));
 _COM_SMARTPTR_TYPEDEF(IAudioCaptureClient, __uuidof(IAudioCaptureClient));
+_COM_SMARTPTR_TYPEDEF(IPropertyStore, __uuidof(IPropertyStore));
 
 IMMDeviceCollectionPtr deviceCollectionOut;
 IMMDeviceCollectionPtr deviceCollectionIn;
@@ -74,15 +75,6 @@ void stop();
 void rec_data();
 void CALLBACK MidiInProc(HMIDIIN hMidiIn, UINT wMsg, DWORD_PTR dwInstance, DWORD_PTR dwParam1, DWORD_PTR dwParam2);
 
-
-template <class T> inline void SafeRelease(T *ppT)
-{
-	if (*ppT)
-	{
-		(*ppT)->Release();
-		*ppT = NULL;
-	}
-}
 
 class win32_error : runtime_error
 {
@@ -403,9 +395,6 @@ void ready(UINT index)
 		}
 	}
 
-	rec_data();
-
-
 	// Ä¶ŠJŽn
 	RenderThread = CreateThread(NULL, 0, WASAPIRenderThread, NULL, 0, NULL);
 	if (RenderThread == NULL) {
@@ -442,15 +431,10 @@ void ready(UINT index)
 
 void stop()
 {
-	HRESULT hr;
-
 	// ’âŽ~
 	SetEvent(ShutdownEvent);
 	if (RenderAudioClient) {
-		hr = RenderAudioClient->Stop();
-		if (FAILED(hr))	{
-			throw win32_error("Unable to stop render client", hr);
-		}
+		RenderAudioClient->Stop();
 	}
 
 	if (RenderThread) {
@@ -477,19 +461,15 @@ void rec_data()
 			while (rec_play_diff[n] < (int)RenderBufferSize) {
 				hr = CaptureClient[n]->GetBuffer(&pData, &framesAvailable, &flags, NULL, NULL);
 				if (FAILED(hr))	{
-					continue;
+					break;
 				}
 
 				for (UINT i = 0; i < framesAvailable; i++) {
 					// L
-					int l;
-					memcpy(&l, pData + i * 2 * 4, 4);
-					ring_buf[n][rec_pos[n] * 2] = l;
+					ring_buf[n][rec_pos[n] * 2] = *(int*)(pData + i * 2 * 4);
 
 					// R
-					int r;
-					memcpy(&r, pData + i * 2 * 4 + 4, 4);
-					ring_buf[n][rec_pos[n] * 2 + 1] = r;
+					ring_buf[n][rec_pos[n] * 2 + 1] = *(int*)(pData + i * 2 * 4 + 4);
 
 					rec_pos[n]++;
 					if (rec_pos[n] == RING_BUF_SIZE) {
@@ -590,11 +570,7 @@ DWORD WINAPI WASAPIRenderThread(LPVOID Context)
 			stillPlaying = false;
 			break;
 		case WAIT_OBJECT_0 + 1:     // AudioSamplesReadyEvent
-			bool ret = RenderBuffer();
-			if (!ret)
-			{
-				stillPlaying = false;
-			}
+			RenderBuffer();
 			break;
 		}
 	}
@@ -664,7 +640,7 @@ INT_PTR CALLBACK DialogProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
 //
 bool GetDeviceName(IMMDeviceCollection *DeviceCollection, UINT DeviceIndex, LPWSTR deviceName, size_t size)
 {
-	IMMDevice *device;
+	IMMDevicePtr device;
 	HRESULT hr;
 
 	hr = DeviceCollection->Item(DeviceIndex, &device);
@@ -672,9 +648,8 @@ bool GetDeviceName(IMMDeviceCollection *DeviceCollection, UINT DeviceIndex, LPWS
 		return false;
 	}
 
-	IPropertyStore *propertyStore;
+	IPropertyStorePtr propertyStore;
 	hr = device->OpenPropertyStore(STGM_READ, &propertyStore);
-	SafeRelease(&device);
 	if (FAILED(hr))	{
 		return false;
 	}
@@ -682,7 +657,6 @@ bool GetDeviceName(IMMDeviceCollection *DeviceCollection, UINT DeviceIndex, LPWS
 	PROPVARIANT friendlyName;
 	PropVariantInit(&friendlyName);
 	hr = propertyStore->GetValue(PKEY_Device_FriendlyName, &friendlyName);
-	SafeRelease(&propertyStore);
 	if (FAILED(hr))	{
 		return false;
 	}
