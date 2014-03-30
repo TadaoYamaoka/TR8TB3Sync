@@ -160,6 +160,9 @@
   <ItemGroup>
     <ClCompile Include="TR8TB3Sync.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <Image Include="TR8TB3Sync.png" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
